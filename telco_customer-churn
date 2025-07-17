@@ -1,1 +1,492 @@
+# 1. Load Data
+# Upload Packages
+library(dplyr)
+library(tidyverse)
+library(readr)
+library(caret)
+library(fastDummies)
 
+df <- read.csv('Telco-Customer-Churn.csv', 
+               stringsAsFactors = FALSE)
+View(df)
+
+# 2. Tidy Data
+## Preview Data
+head(df)
+tail(df)
+glimpse(df)
+
+sum(complete.cases(df))
+colSums(is.na(df)) # na in totalcharges
+
+## Demographic
+df$gender <- as.factor(df$gender)
+df$SeniorCitizen <- factor(df$SeniorCitizen,
+                           levels = c(0, 1),
+                           labels = c('No', 'Yes') )
+df$Partner <- as.factor(df$Partner)
+df$Dependents <- as.factor(df$Dependents)
+
+## Product
+df$PhoneService <- as.factor(df$PhoneService)
+df$MultipleLines <- as.factor(df$MultipleLines)
+df$InternetService <- as.factor(df$InternetService)
+df$OnlineSecurity <- as.factor(df$OnlineSecurity)
+df$OnlineBackup <- as.factor(df$OnlineBackup)
+df$DeviceProtection <- as.factor(df$DeviceProtection)
+df$TechSupport <- as.factor(df$TechSupport)
+df$StreamingTV <- as.factor(df$StreamingTV)
+df$StreamingMovies <- as.factor(df$StreamingMovies)
+
+## payment
+df$Contract <- as.factor(df$Contract)
+df$PaperlessBilling <- as.factor(df$PaperlessBilling)
+df$PaymentMethod <- as.factor(df$PaymentMethod)
+df$Churn <- as.factor(df$Churn)
+df$Churn <- factor(df$Churn, levels = c("No", "Yes"))
+
+## replace_na by drop
+df %>%
+  filter(is.na(TotalCharges)) %>%
+  select(everything())
+
+clean_df <- df %>%
+  drop_na(TotalCharges) %>%
+  mutate(segment = case_when(tenure <= 24 & MonthlyCharges <= 35 ~ "Low",
+                             tenure <= 24 & MonthlyCharges <= 54 ~ "Medium",
+                             tenure > 24 & MonthlyCharges > 54 ~ "High Value Long Term",
+                             tenure > 24 ~ "Long Term",
+                             MonthlyCharges > 54 ~ "High Charge",
+                             TRUE ~ "Other")) %>%
+  rename(cus_id = customerID,
+         gender = gender,
+         senior_citizen = SeniorCitizen,
+         partner = Partner,
+         dependents = Dependents,
+         tenure = tenure,
+         phone = PhoneService,
+         mul_line = MultipleLines,
+         internet = InternetService,
+         on_secure = OnlineSecurity,
+         on_backup = OnlineBackup,
+         dev_pro = DeviceProtection,
+         tech_sup = TechSupport,
+         tv = StreamingTV,
+         movies = StreamingMovies,
+         contract = Contract,
+         paperless_billing = PaperlessBilling,
+         pay_method = PaymentMethod,
+         monthly_cha= MonthlyCharges,
+         sum_cha = TotalCharges,
+         churn = Churn) %>%
+  mutate( across( where(is.factor), 
+                  tolower)) %>%
+  mutate( across( where(is.character), 
+                  as.factor ) )
+
+# 3. Transform & visual
+### totalcharges
+total_charges <- clean_df %>%
+  group_by(segment, churn) %>%
+  summarise(avg = median(sum_cha),
+            min = min(sum_cha),
+            max = max(sum_cha),
+            n = n()) %>%
+  arrange(desc(churn))
+
+total_charges_chart <- ggplot(clean_df,
+                              aes(sum_cha)) +
+  geom_histogram(bins = 20, fill = 'blue') +
+  theme_minimal()
+
+total_charges_box <- ggplot(clean_df,
+                            aes(churn, sum_cha)) +
+  geom_boxplot() +
+  theme_minimal() ## detect outlier
+
+### IQR
+q3 <- quantile(clean_df$sum_cha, 
+               prob = 0.75)
+q1 <- quantile(clean_df$sum_cha, 
+               prob = 0.25)
+IQR <- q3-q1
+
+out <- q3 + (1.5 * IQR)
+
+### Monthlycharges
+monthly_charges <- clean_df %>%
+  group_by(segment, churn) %>%
+  summarise(avg = median(monthly_cha),
+            min = min(monthly_cha),
+            max = max(monthly_cha),
+            n = n()) %>%
+  arrange(desc(churn), -n)
+
+monthly_charges_chart <- ggplot(clean_df,
+                                aes(monthly_cha)) +
+  geom_density(fill = 'red') +
+  theme_minimal()
+
+monthly_charges_boxchart <- ggplot(clean_df,
+                                   aes(churn, monthly_cha)) +
+  geom_boxplot() +
+  theme_minimal()
+
+q3 <- quantile(clean_df$monthly_cha, 
+               prob = 0.75)
+q1 <- quantile(clean_df$monthly_cha, 
+               prob = 0.25)
+IQR <- q3-q1
+out <- q3 + (1.5 * IQR)
+
+monthly_charges_bar <- ggplot(clean_df,
+                              aes(monthly_cha)) +
+  geom_bar(mapping = aes(segment)) +
+  theme_minimal() + facet_wrap(~ churn, ncol = 5)
+
+### partner 
+clean_df %>%
+  count(partner, churn)
+
+par <- clean_df %>%
+  group_by(partner, segment, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn))
+
+par_chart <- ggplot(clean_df,
+                    aes(partner, fill = churn)) +
+  geom_bar(mapping = aes(segment)) +
+  theme_minimal()
+
+### dependents
+depend <- clean_df %>%
+  group_by(dependents, segment, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn))
+
+depend_chart <- ggplot(clean_df,
+                       aes(dependents, fill = churn)) +
+  geom_bar(mapping = aes(segment)) +
+  theme_minimal()
+
+### phoneservice
+phone_ser<- clean_df %>%
+  group_by(phone, segment, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+phone_ser_chart <- ggplot(clean_df,
+                          aes(phone, fill = churn)) +
+  geom_bar(mapping = aes(segment)) +
+  theme_minimal()
+
+### internetservice
+clean_df %>%
+  group_by(internet, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+inter <- clean_df %>%
+  group_by(internet, segment, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+inter_chart <- ggplot(clean_df,
+                      aes(inter, fill = churn)) +
+  geom_bar(mapping = aes(segment)) +
+  theme_minimal()
+
+### mul_line
+clean_df %>%
+  group_by(mul_line, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+line <- clean_df %>%
+  group_by(mul_line, segment, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+line_chart <- ggplot(clean_df,
+                     aes(mul_line, fill = churn)) +
+  geom_bar(mapping = aes(segment)) +
+  theme_minimal()
+
+
+### onlinesecurity
+on_sec <- clean_df %>%
+  group_by(on_secure, segment, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+ggplot(clean_df,
+       aes(on_secure, fill = churn)) +
+  geom_bar(mapping = aes(segment)) +
+  theme_minimal() 
+
+### tv
+clean_df %>%
+  group_by(tv,churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+tv <- clean_df %>%
+  group_by(tv, segment, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+tv_chart <- ggplot(clean_df,
+                   aes(tv, fill = churn)) +
+  geom_bar(mapping = aes(segment)) +
+  theme_minimal() 
+
+### streamingmovies
+clean_df %>%
+  group_by(movies,churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+stream_movies <- clean_df %>%
+  group_by(movies, segment, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+stream_movies_chart <- ggplot(clean_df,
+                              aes(movies, fill = churn)) +
+  geom_bar(mapping = aes(segment)) +
+  theme_minimal()
+
+### onlinebackup
+clean_df %>%
+  group_by(on_backup,churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+online_back <- clean_df %>%
+  group_by(on_backup, segment, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+online_back_chart <- ggplot(clean_df,
+                            aes(on_backup, fill = churn)) +
+  geom_bar(mapping = aes(segment)) +
+  theme_minimal()
+
+### deviceprotection
+clean_df %>%
+  group_by(dev_pro, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+dev_prot <- clean_df %>%
+  group_by(dev_pro ,segment, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+dev_prot_chart <- ggplot(clean_df,
+                         aes(dev_pro, fill = churn)) +
+  geom_bar(mapping = aes(segment)) +
+  theme_minimal()
+
+### techsupport
+clean_df %>%
+  group_by(tech_sup, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+tech_supp <- clean_df %>%
+  group_by(tech_sup, segment, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+tech_supp_chart <- ggplot(clean_df,
+                          aes(tech_sup, fill = churn)) +
+  geom_bar(mapping = aes(segment)) +
+  theme_minimal()
+
+### tenure
+ten <- clean_df %>%
+  filter(tenure >= 24) %>%
+  group_by(segment, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn))
+
+ten_2 <- clean_df %>%
+  filter(tenure < 24) %>%
+  group_by(segment, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn))
+
+ggplot(clean_df,
+       aes(tenure, fill = churn)) +
+  geom_bar() +
+  theme_minimal()
+
+tel_cha_relate <- ggplot(clean_df %>% sample_n(1000),
+                         aes(tenure, sum_cha)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "blue")
+
+
+### contract
+clean_df %>%
+  group_by(churn, contract) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+cont <- clean_df %>%
+  group_by(segment, churn, contract) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+cont_chart <- ggplot(clean_df,
+                     aes(contract, fill = churn)) +
+  geom_bar(mapping = aes(segment)) +
+  theme_minimal()
+
+### paperless_billing
+paper <- clean_df %>%
+  group_by(paperless_billing, segment, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+paper_charts <- ggplot(clean_df,
+                       aes(paperless_billing, fill = churn)) +
+  geom_bar() +
+  theme_minimal() +
+  facet_wrap(~ segment, ncol = 2)
+
+### payment method
+pay <- clean_df %>%
+  group_by(pay_method, segment, churn) %>%
+  summarise(n = n()) %>%
+  arrange(desc(churn), -n)
+
+pay_charts <- ggplot(clean_df,
+                     aes(pay_method, fill = churn)) +
+  geom_bar() +
+  theme_minimal() +
+  facet_wrap(~ segment, ncol = 2) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8))
+
+# 5. Modeling
+library(caret)
+library(fastDummies)
+
+## do dummy
+columns_to_dummy <- c('partner', 'dependents',
+                      'phone', 'mul_line', 'internet',
+                      'on_secure', 'on_backup', 'dev_pro',
+                      'tech_sup', 'tv', 'movies', 'contract',
+                      'paperless_billing', 'pay_method')
+
+clean_df_encoded <- dummy_cols(clean_df,
+                               select_columns = columns_to_dummy,
+                               remove_first_dummy = TRUE,
+                               remove_selected_columns = TRUE)
+
+## normalization -> Z-Score
+num_cols <- c('tenure', 'monthly_cha', 'sum_cha')
+
+clean_df_final <- clean_df_encoded
+
+for (col_name in num_cols) {
+  clean_df_final[[col_name]]  <- scale(clean_df_encoded[[col_name]])
+}
+
+## 1. split data
+n <- nrow(clean_df_final)
+id <- sample(1:n, size = 0.8*n)
+train_data <- clean_df_final[id, ]
+test_data <- clean_df_final[-id, ]
+
+## 2. train model
+ctrl <- trainControl(method = 'cv',
+                     number = 5,
+                     verboseIter = FALSE)
+
+logis_model <- train(churn ~ tenure + monthly_cha + sum_cha +
+                       `internet_fiber optic` +
+                       `contract_one year` + `contract_two year` + paperless_billing_yes +
+                       `pay_method_electronic check`,
+                     data = train_data,
+                     method = 'glm',
+                     family = 'binomial',
+                     metric = 'Accuracy',
+                     trControl = ctrl)
+summary(logis_model)
+
+## rf model
+
+rf_model <- train(churn ~ tenure + monthly_cha + sum_cha +
+                    `internet_fiber optic` +
+                    `contract_one year` + `contract_two year` + paperless_billing_yes +
+                    `pay_method_electronic check`,
+                  data = train_data,
+                  method = 'rf',
+                  metric = 'Accuracy',
+                  trControl = ctrl)
+
+## 3. score
+logis_predict_test <- predict(logis_model,
+                              newdata = test_data,
+                              type = 'prob')
+test_data$prob <- logis_predict_test$yes 
+test_data$pred <- if_else(test_data$prob >= 0.4, 'yes', 'no')
+
+test_data$pred <- factor(test_data$pred, levels = levels(test_data$churn))
+
+
+## rf_model
+rf_predict_test <- predict(rf_model,
+                              newdata = test_data,
+                              type = 'prob')
+test_data$prob <- rf_predict_test$yes 
+test_data$pred <- if_else(test_data$prob >= 0.3, 'yes', 'no')
+
+test_data$pred <- factor(test_data$pred, levels = levels(test_data$churn))
+
+
+
+## 4. evaluate
+confu <- table(test_data$pred, test_data$churn,
+               dnn = c('predicted', 'actual'))
+
+acc <- (confu[1,1] + confu[2,2]) / sum(confu)
+pre <- confu[2,2] / (confu[2,1] + confu[2,2])
+rec <- confu[2,2] / (confu[1,2] + confu[2,2])
+f1_score <- 2 * ( (pre * rec) / (pre + rec) )
+
+confusionMatrix(test_data$pred, test_data$churn,
+                positive = 'yes',
+                mode = 'prec_recall')
+
+varImp(rf_model)
+
+
+# 6. communication
+## change values back to normal
+ten_mean<- mean(clean_df$tenure)
+mon_mean<- mean(clean_df$monthly_cha)
+ten_sd<- sd(clean_df$tenure)
+mon_sd<- sd(clean_df$monthly_cha)
+
+## arrange data for marketing
+test_data_mkt <- test_data %>%
+  mutate(prob = prob,
+         pred = pred,
+         risk = case_when(prob <= 0.5 ~ 'low',
+                          prob <= 0.7 ~ 'medium',
+                          TRUE ~ 'high'),
+         tenure = (tenure * ten_sd) + ten_mean,
+         month_cha = (monthly_cha * mon_sd) + mon_mean) %>%
+  select(cus_id, gender, tenure, monthly_cha, 
+         segment, prob, pred, risk) %>%
+  arrange(-prob)
+
+## send files
+write.csv(test_data_mkt, "telco_churn_clean.csv", row.names = FALSE)
+
+## send files to data engineer
+saveRDS(logis_model, "logistic_reg.RDS")
