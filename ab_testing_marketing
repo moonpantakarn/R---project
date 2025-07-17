@@ -1,1 +1,171 @@
+library(dplyr)
+library(tidyverse)
+library(lubridate)
+library(readr)
 
+# 1. Load Data
+ctrl_df<- read_delim('control_group.csv', 
+                         delim = ';',
+                         show_col_types = FALSE)
+
+test_df <- read_delim('test_group.csv', 
+                         delim = ';',
+                         show_col_types = FALSE)
+
+colSums(is.na(ctrl_df))
+rowSums(is.na(ctrl_df))
+colSums(is.na(test_df))
+rowSums(is.na(test_df))
+summary()
+
+# 2. Tidy Data
+## clean ctrl
+ctrl_df$Date <- dmy(ctrl_df$Date)
+
+## plot chart
+ggplot(clean_ctrl_df,
+       aes(imp)) +
+  geom_histogram(bins = 5) ## mean ที่เหลือ median
+
+ggplot(clean_ctrl_df,
+       aes(reach)) +
+  geom_histogram(bins = 5)
+
+ggplot(clean_ctrl_df,
+       aes(clicks_web)) +
+  geom_histogram(bins = 5) 
+
+ggplot(clean_ctrl_df,
+       aes(search)) +
+  geom_histogram(bins = 5)
+
+ggplot(clean_ctrl_df,
+       aes(view)) +
+  geom_histogram(bins = 5)
+
+ggplot(clean_ctrl_df,
+       aes(atc)) +
+  geom_histogram(bins = 5)
+
+ggplot(clean_ctrl_df,
+       aes(purchase)) +
+  geom_histogram(bins = 5)
+
+## mean / median imputation
+avg_imp <- mean(clean_ctrl_df$imp, na.rm = TRUE)
+med_reach <- median(clean_ctrl_df$reach, na.rm = TRUE)
+med_clicks_web <- median(clean_ctrl_df$clicks_web, na.rm = TRUE)
+med_search <- median(clean_ctrl_df$search, na.rm = TRUE)
+med_view <- median(clean_ctrl_df$view, na.rm = TRUE)
+med_atc <- median(clean_ctrl_df$atc, na.rm = TRUE)
+med_purchase <- median(clean_ctrl_df$purchase, na.rm = TRUE)
+
+## rename ctrl_df
+clean_ctrl_df <- ctrl_df %>%
+  rename(cam_name = `Campaign Name`,
+         date = Date,
+         spend = `Spend [USD]`,
+         imp = `# of Impressions`,
+         reach = Reach,
+         clicks_web = `# of Website Clicks`,
+         search = `# of Searches`,
+         view = `# of View Content`,
+         atc = `# of Add to Cart`,
+         purchase = `# of Purchase`) %>%
+  mutate(imp = replace_na(imp, avg_imp),
+         reach = replace_na(reach, med_reach),
+         clicks_web = replace_na(clicks_web, med_clicks_web),
+         search = replace_na(search, med_search),
+         view = replace_na(view, med_view),
+         atc = replace_na(atc, med_atc),
+         purchase = replace_na(purchase, med_purchase))
+
+## clean ctrl
+test_df$Date <- dmy(test_df$Date)
+
+## rename test_df
+clean_test_df <- test_df %>%
+  rename(cam_name = `Campaign Name`,
+         date = Date,
+         spend = `Spend [USD]`,
+         imp = `# of Impressions`,
+         reach = Reach,
+         clicks_web = `# of Website Clicks`,
+         search = `# of Searches`,
+         view = `# of View Content`,
+         atc = `# of Add to Cart`,
+         purchase = `# of Purchase`) %>%
+  mutate(imp = replace_na(imp, avg_imp),
+         reach = replace_na(reach, med_reach),
+         clicks_web = replace_na(clicks_web, med_clicks_web),
+         search = replace_na(search, med_search),
+         view = replace_na(view, med_view),
+         atc = replace_na(atc, med_atc),
+         purchase = replace_na(purchase, med_purchase))
+
+## check duplicated
+duplicated(clean_ctrl_df)
+duplicated(clean_test_df)
+
+
+# 3. transform & visualize
+## combine control + test 
+combine_data <- bind_rows(clean_ctrl_df, clean_test_df)
+
+## boxplot
+
+spend_box <- ggplot(combine_data,
+                    aes(cam_name, spend, fill = cam_name)) +
+  geom_boxplot()
+
+imp_box <- ggplot(combine_data,
+                  aes(cam_name, imp, fill = cam_name)) +
+  geom_boxplot()
+
+reach_box <- ggplot(combine_data,
+                    aes(cam_name, reach, fill = cam_name)) +
+  geom_boxplot()
+
+clicks_box <- ggplot(combine_data,
+                     aes(cam_name, clicks_web, fill = cam_name)) +
+  geom_boxplot()
+
+search_box <- ggplot(combine_data,
+                     aes(cam_name, search, fill = cam_name)) +
+  geom_boxplot()
+
+view_box <- ggplot(combine_data,aes(cam_name, view, fill = cam_name)) +
+  geom_boxplot()
+
+atc_box <- ggplot(combine_data,
+                  aes(cam_name, atc, fill = cam_name)) +
+  geom_boxplot()
+
+purchase_box <- ggplot(combine_data,
+                       aes(cam_name, purchase, fill = cam_name)) +
+  geom_boxplot()
+
+q3 <- quantile(combine_data$search, 0.75)
+q1 <- quantile(combine_data$search, 0.25)
+iqr <- q3-q1
+
+
+## create cpc, ctr, cost per conv, conv_rate 
+
+combine_data <- combine_data %>%
+  mutate(ctr = round(clicks_web / imp * 100, 2),
+         cpc = round(spend / clicks_web, 2),
+         conv_rate = round(purchase / clicks_web * 100, 2),
+         cpa = round(spend / purchase, 2))
+
+## Mann-Whitney U test
+ctrl <- combine_data %>%
+  filter(cam_name == 'Control Campaign')
+
+test <- combine_data %>%
+  filter(cam_name == 'Test Campaign')
+
+ctr_sig <- wilcox.test(ctrl$ctr, test$ctr) ## p-value = 0.0002
+cpc_sig <- wilcox.test(ctrl$cpc, test$cpc) ## p-value = 0.9058
+conv_rate_sig <- wilcox.test(ctrl$conv_rate, test$conv_rate) ## p-value = 0.2805
+cpa_sig <- wilcox.test(ctrl$cpa, test$cpa) ## p-value = 0.2369
