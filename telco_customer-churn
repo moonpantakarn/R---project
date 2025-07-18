@@ -466,6 +466,16 @@ confusionMatrix(test_data$pred, test_data$churn,
 varImp(rf_model)
 varImp(logis_model)
 
+## plot roc curve
+roc_logis <- roc(test_data$churn, logis_predict_test$yes)
+roc_rf <- roc(test_data$churn, rf_predict_test$yes)
+
+plot(roc_logis, col = "blue", main = "ROC Curve: Logistic Regression")
+plot(roc_rf, col = "red", main = "ROC Curve: Random Forest")
+
+## auc
+auc(roc_logis) ## 0.832
+auc(roc_rf) #0.8225
 
 # 6. communication
 ## change values back to normal
