@@ -396,6 +396,7 @@ for (col_name in num_cols) {
 }
 
 ## 1. split data
+set.seed(42)
 n <- nrow(clean_df_final)
 id <- sample(1:n, size = 0.8*n)
 train_data <- clean_df_final[id, ]
@@ -433,7 +434,7 @@ logis_predict_test <- predict(logis_model,
                               newdata = test_data,
                               type = 'prob')
 test_data$prob <- logis_predict_test$yes 
-test_data$pred <- if_else(test_data$prob >= 0.4, 'yes', 'no')
+test_data$pred <- if_else(test_data$prob >= 0.3, 'yes', 'no')
 
 test_data$pred <- factor(test_data$pred, levels = levels(test_data$churn))
 
@@ -463,6 +464,7 @@ confusionMatrix(test_data$pred, test_data$churn,
                 mode = 'prec_recall')
 
 varImp(rf_model)
+varImp(logis_model)
 
 
 # 6. communication
